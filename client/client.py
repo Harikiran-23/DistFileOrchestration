@@ -43,7 +43,7 @@ def download_file(client_socket):
         data = client_socket.recv(1024)
         print(data)
         while data != b"END":
-            f.write(response)
+            f.write(data)
             data = client_socket.recv(1024)
             print(data)
 
@@ -88,8 +88,8 @@ def main():
 
         # Authentication response
         response = client_socket.recv(1024).decode()
-        print(response)
-        if "failed" in response:
+       # print(response)
+        if response == "0":
             print("Authentication failed. Closing connection.")
             return
 
@@ -113,5 +113,5 @@ def main():
             else:
                 print("Invalid command.")
 
-if __name__ == "__main__":
-    main()
+#if __name__ == "_main_":
+main()

@@ -31,8 +31,7 @@ def h_client(conn, addr, usrs):
         p = conn.recv(1024).decode().strip()
 
         if not auth(u, p, usrs):
-            conn.sendall(b"Auth Failed.\n")
-            conn.close()
+            conn.sendall("0".encode())
             return
 
         conn.sendall(b"AUTH success")
@@ -44,7 +43,7 @@ def h_client(conn, addr, usrs):
             if command == "UPLOAD":
                 h_up(conn, user_path)
             elif command == "DOWNLOAD":
-                h_donw(conn, user_path)
+                h_down(conn, user_path)
             elif command == "LIST":
                 h_list(conn, user_path)
             elif command == "VIEW":
@@ -58,37 +57,41 @@ def h_client(conn, addr, usrs):
     finally:
         conn.close()
 
-def h_up(conn, u_path):
-    if not os.path.exists(u_path):
-        os.makedirs(u_path)
+def h_up(conn, u_path):  
+    if not os.path.exists(u_path):  
+        os.makedirs(u_path)  
 
-    f_name = conn.recv(1024).decode().strip()
-    f_path = os.path.join(u_path, f_name)
+    f_name = conn.recv(1024).decode().strip()  
+    f_path = os.path.join(u_path, f_name)  
 
-    conn.sendall(b"File received")
-    with open(f_path, 'wb') as f:
-        while True:
-            data = conn.recv(1024)
-            print(data)
-            if data == b"END":
-            	break
-            f.write(data)
-           
-    conn.sendall(b"File upload completed.\n")
+    conn.sendall("File received".encode())  
+    with open(f_path, 'wb') as f:  
+        while True:  
+            data = conn.recv(1024)  
+            print(data)  
+            if data == "END".encode():  
+                break  
+            f.write(data)  
 
-def h_donw(conn, u_path):
-    filename = conn.recv(1024).decode().strip()
-    f_path = os.path.join(u_path, filename)
-    if os.path.exists(f_path):
-    	conn.send(b"File Exists, Download will start now~\n")
-    	with open(f_path, 'rb') as f:
-            data = f.read(1024)
-            while data:
-                conn.sendall(data)
-                data = f.read(1024)
-            conn.sendall(b"END")  # End of file signal
-    else:
-        conn.sendall(b"File not found.\n")
+    conn.sendall("File upload completed.\n".encode())
+
+def h_down(conn, u_path):  
+    filename = conn.recv(1024).decode().strip()  
+    f_path = os.path.join(u_path, filename)  
+    if os.path.exists(f_path):  
+        conn.sendall("File Exists, Download will start now~\n".encode())  
+        with open(f_path, 'rb') as f:  
+            data = f.read(1024)  
+            print(data)  
+            print("============================================")  
+            while data:  
+                conn.sendall(data)  
+                data = f.read(1024)  
+                print(data)  
+                print("============================================")  
+            conn.sendall("END".encode())  
+    else:  
+        conn.sendall("File not found.\n".encode())
 
 def h_list(conn, u_path):
     files = os.listdir(u_path)
@@ -134,4 +137,3 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         print("Connection established", addr)
         c_thread = threading.Thread(target=h_client, args=(conn, addr, load_usrs()))
         c_thread.start()
-
