@@ -1,1 +1,7 @@
 u1,p1
+hari,mypassword
+nishruth,nish123
+shankar,shanks123
+ganesh,halembre
+jhon,j123
+charlie,char321

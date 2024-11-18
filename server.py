@@ -11,6 +11,7 @@ storage = "server_storage"
 os.makedirs(storage, exist_ok=True)
 
 def load_usrs():
+    """Load users from the credentials file."""
     usrs = {}
     with open("id_passwd.txt", 'r') as f:
         for line in f:
@@ -19,85 +20,128 @@ def load_usrs():
     return usrs
 
 def auth(u, p, usrs):
+    """Authenticate user based on provided credentials."""
     if u in usrs and usrs[u] == p:
         print("Client exists and authenticated", u, p)
-        return True
+        return 1
+    elif u in usrs:
+        print('Invalid password')
+        return -1
     else:
+        return 0
+
+def signup_user(conn,usrs):
+    """Handle the new user sign-up process."""
+    u = conn.recv(1024).decode().strip()
+    p = conn.recv(1024).decode().strip()
+
+    # Check if the username already exists
+    if u in usrs:
+        conn.sendall(b"Username already exists. Please try a different one.\n")
         return False
 
+    # Add new user to the credentials file
+    with open("id_passwd.txt", 'a') as f:
+        f.write(f"{u},{p}\n")
+    usrs[u]=p
+    # Create the user's directory
+    user_path = os.path.join(storage, u)
+    os.makedirs(user_path, exist_ok=True)
+
+    conn.sendall(b"Sign-up successful.\n")
+    print(f"New user signed up: {u}")
+    return True
+
 def h_client(conn, addr, usrs):
+    """Handle client operations."""
     try:
-        u = conn.recv(1024).decode().strip()
-        p = conn.recv(1024).decode().strip()
+        choice = conn.recv(1024).decode().strip()
 
-        if not auth(u, p, usrs):
-            conn.sendall("0".encode())
-            return
+        if choice == "2":
+            if signup_user(conn, usrs):
+                conn.sendall(b"Please restart the connection to log in.\n")
+            return  # Disconnect
 
-        conn.sendall(b"AUTH success")
-        user_path = os.path.join("server_storage", u)
+        elif choice == "1":
+            conn.sendall(b"Enter username: ")
+            u = conn.recv(1024).decode().strip()
+            conn.sendall(b"Enter password: ")
+            p = conn.recv(1024).decode().strip()
 
-        while True:
-            command = conn.recv(1024).decode().strip().upper()
-            print(command)
-            if command == "UPLOAD":
-                h_up(conn, user_path)
-            elif command == "DOWNLOAD":
-                h_down(conn, user_path)
-            elif command == "LIST":
-                h_list(conn, user_path)
-            elif command == "VIEW":
-                h_view(conn, user_path)
-            elif command == "DELETE":
-                h_del(conn, user_path)
-            elif command == "EXIT":
-                break
-            else:
-                conn.sendall(b"Invalid command.\n")
+            auth_res = auth(u, p, usrs)
+            if auth_res == 0:
+                conn.sendall(b"0")  # User does not exist
+                return
+            elif auth_res == -1:
+                conn.sendall(b"-1")  # Invalid password
+                return
+
+            conn.sendall(b"AUTH success")
+            user_path = os.path.join(storage, u)
+
+            while True:
+                command = conn.recv(1024).decode().strip().upper()
+                print(command)
+                if command == "UPLOAD":
+                    h_up(conn, user_path)
+                elif command == "DOWNLOAD":
+                    h_down(conn, user_path)
+                elif command == "LIST":
+                    h_list(conn, user_path)
+                elif command == "VIEW":
+                    h_view(conn, user_path)
+                elif command == "DELETE":
+                    h_del(conn, user_path)
+                elif command == "EXIT":
+                    break
+                else:
+                    conn.sendall(b"Invalid command.\n")
+        else:
+            conn.sendall(b"Invalid option. Disconnecting.\n")
+
     finally:
         conn.close()
 
 def h_up(conn, u_path):  
+    """Handle file upload from client."""
     if not os.path.exists(u_path):  
         os.makedirs(u_path)  
 
     f_name = conn.recv(1024).decode().strip()  
     f_path = os.path.join(u_path, f_name)  
 
-    conn.sendall("File received".encode())  
+    conn.sendall(b"File received")  
     with open(f_path, 'wb') as f:  
         while True:  
             data = conn.recv(1024)  
-            print(data)  
-            if data == "END".encode():  
+            if data == b"END":  
                 break  
             f.write(data)  
 
-    conn.sendall("File upload completed.\n".encode())
+    conn.sendall(b"File upload completed.\n")
 
 def h_down(conn, u_path):  
+    """Handle file download for client."""
     filename = conn.recv(1024).decode().strip()  
     f_path = os.path.join(u_path, filename)  
     if os.path.exists(f_path):  
-        conn.sendall("File Exists, Download will start now~\n".encode())  
+        conn.sendall(b"File Exists, Download will start now~\n")  
         with open(f_path, 'rb') as f:  
             data = f.read(1024)  
-            print(data)  
-            print("============================================")  
             while data:  
                 conn.sendall(data)  
                 data = f.read(1024)  
-                print(data)  
-                print("============================================")  
-            conn.sendall("END".encode())  
+            conn.sendall(b"END")  
     else:  
-        conn.sendall("File not found.\n".encode())
+        conn.sendall(b"File not found.\n")
 
 def h_list(conn, u_path):
+    """List files in the user's directory."""
     files = os.listdir(u_path)
     conn.sendall("\n".join(files).encode() + b"\n")
 
 def h_view(conn, u_path):
+    """Preview the first 1024 bytes of a file."""
     conn.sendall(b"Enter file name: ")
     filename = conn.recv(1024).decode().strip()
     f_p = os.path.join(u_path, filename)
@@ -110,6 +154,7 @@ def h_view(conn, u_path):
         conn.sendall(b"File not found\n")
 
 def h_del(conn, u_path):
+    """Delete a file from the user's directory."""
     conn.sendall(b"Enter file name: ")
     filename = conn.recv(1024).decode().strip()
     f_p = os.path.join(u_path, filename)
@@ -120,8 +165,8 @@ def h_del(conn, u_path):
     else:
         conn.sendall(b"File not found\n")
 
-
 def signal_handler(sig, frame):
+    """Handle server shutdown gracefully."""
     print("\nServer shutting down gracefully.")
     sys.exit(0)
 

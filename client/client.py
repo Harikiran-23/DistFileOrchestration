@@ -1,10 +1,10 @@
 import socket
-import sys
 import os
 
 # Server configuration
 HOST = '127.0.0.1'  # Server IP address
-PORT = 12345      # Server port
+PORT = 12345        # Server port
+
 # Client functions for each command
 def upload_file(client_socket):
     filename = input("Enter the filename to upload: ").strip()
@@ -14,17 +14,13 @@ def upload_file(client_socket):
 
     client_socket.sendall(b"UPLOAD")
     client_socket.sendall(filename.encode())
-    print(client_socket.recv(1024))  
-   
+    print(client_socket.recv(1024).decode())  # Server acknowledgment
+
     with open(filename, 'rb') as f:
         data = f.read(1024)
-        print(data)
-        print("============================================")
         while data:
             client_socket.sendall(data)
             data = f.read(1024)
-            print(data)
-            print("============================================")
         client_socket.sendall(b"END")
     print(client_socket.recv(1024).decode())  # Confirmation message
 
@@ -34,21 +30,17 @@ def download_file(client_socket):
     client_socket.sendall(filename.encode())
 
     response = client_socket.recv(1024)
-    print(response)
     if response == b"File not found.\n":
         print(response.decode())
         return
 
     with open(filename, 'wb') as f:
         data = client_socket.recv(1024)
-        print(data)
         while data != b"END":
             f.write(data)
             data = client_socket.recv(1024)
-            print(data)
 
     print("File download completed.")
-
 
 def list_files(client_socket):
     client_socket.sendall(b"LIST")
@@ -62,7 +54,7 @@ def view_file(client_socket):
     client_socket.sendall(filename.encode())
 
     response = client_socket.recv(1024)
-    if response == b"File not found.\n":
+    if response == b"File not found\n":
         print(response.decode())
     else:
         print("File preview (first 1024 bytes):")
@@ -76,42 +68,61 @@ def delete_file(client_socket):
     print(client_socket.recv(1024).decode())  # Deletion confirmation
 
 # Main client function
-
 def main():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
         client_socket.connect((HOST, PORT))
-        # Step 1: Authenticate
-        username = input("Username: ").strip()
-        client_socket.sendall(username.encode())
-        password = input("Password: ").strip()
-        client_socket.sendall(password.encode())
+        #Choose login or sign-up
+        choice = input("Do you want to (1) Login or (2) Sign Up? Enter 1 or 2: ").strip()
+        if choice == "2":
+            client_socket.sendall(b"2")
+            username = input("Enter a username: ").strip()
+            client_socket.sendall(username.encode())
+            password = input("Enter a password: ").strip()
+            client_socket.sendall(password.encode())
 
-        # Authentication response
-        response = client_socket.recv(1024).decode()
-       # print(response)
-        if response == "0":
-            print("Authentication failed. Closing connection.")
+            response = client_socket.recv(1024).decode()
+            print(response)
             return
 
-        # Step 2: Command loop
-        while True:
-            command = input("Enter command (UPLOAD, DOWNLOAD, LIST, VIEW, DELETE, EXIT): ").strip().upper()
-            if command == "UPLOAD":
-                upload_file(client_socket)
-            elif command == "DOWNLOAD":
-                download_file(client_socket)
-            elif command == "LIST":
-                list_files(client_socket)
-            elif command == "VIEW":
-                view_file(client_socket)
-            elif command == "DELETE":
-                delete_file(client_socket)
-            elif command == "EXIT":
-                client_socket.sendall(b"EXIT")
-                print("Exiting...")
-                break
-            else:
-                print("Invalid command.")
+        elif choice == "1":
+            client_socket.sendall(b"1")
+            username = input("Username: ").strip()
+            client_socket.sendall(username.encode())
+            password = input("Password: ").strip()
+            client_socket.sendall(password.encode())
 
-#if __name__ == "_main_":
+            # Authentication response
+            response = client_socket.recv(1024).decode()
+            if response == "0":
+                print("User does not exist. Closing connection.")
+                return
+            elif response == "-1":
+                print("Invalid password!")
+                return
+            elif response == "AUTH success":
+                print("Login successful!")
+
+            #Command loop
+            while True:
+                command = input("Enter command (UPLOAD, DOWNLOAD, LIST, VIEW, DELETE, EXIT): ").strip().upper()
+                if command == "UPLOAD":
+                    upload_file(client_socket)
+                elif command == "DOWNLOAD":
+                    download_file(client_socket)
+                elif command == "LIST":
+                    list_files(client_socket)
+                elif command == "VIEW":
+                    view_file(client_socket)
+                elif command == "DELETE":
+                    delete_file(client_socket)
+                elif command == "EXIT":
+                    client_socket.sendall(b"EXIT")
+                    print("Exiting...")
+                    break
+                else:
+                    print("Invalid command.")
+        else:
+            print("Invalid choice. Closing connection.")
+            return
+
 main()
