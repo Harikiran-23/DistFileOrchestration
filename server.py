@@ -2,13 +2,17 @@ import socket
 import threading
 import os
 import signal
-import sys
 
-HOST = '127.0.0.1'
-PORT = 12345
+HOST = socket.gethostbyname(socket.gethostname())
+PORT = 9999
+print(HOST)
+#HOST = '127.0.0.1'
+#PORT = 12345
 
 storage = "server_storage"
 os.makedirs(storage, exist_ok=True)
+
+stop_server = False  # Shared flag for graceful shutdown
 
 def load_usrs():
     """Load users from the credentials file."""
@@ -30,21 +34,18 @@ def auth(u, p, usrs):
     else:
         return 0
 
-def signup_user(conn,usrs):
+def signup_user(conn, usrs):
     """Handle the new user sign-up process."""
     u = conn.recv(1024).decode().strip()
     p = conn.recv(1024).decode().strip()
 
-    # Check if the username already exists
     if u in usrs:
         conn.sendall(b"Username already exists. Please try a different one.\n")
         return False
 
-    # Add new user to the credentials file
     with open("id_passwd.txt", 'a') as f:
         f.write(f"{u},{p}\n")
-    usrs[u]=p
-    # Create the user's directory
+    usrs[u] = p
     user_path = os.path.join(storage, u)
     os.makedirs(user_path, exist_ok=True)
 
@@ -60,20 +61,18 @@ def h_client(conn, addr, usrs):
         if choice == "2":
             if signup_user(conn, usrs):
                 conn.sendall(b"Please restart the connection to log in.\n")
-            return  # Disconnect
+            return
 
         elif choice == "1":
-            conn.sendall(b"Enter username: ")
             u = conn.recv(1024).decode().strip()
-            conn.sendall(b"Enter password: ")
             p = conn.recv(1024).decode().strip()
 
             auth_res = auth(u, p, usrs)
             if auth_res == 0:
-                conn.sendall(b"0")  # User does not exist
+                conn.sendall(b"0")
                 return
             elif auth_res == -1:
-                conn.sendall(b"-1")  # Invalid password
+                conn.sendall(b"-1")
                 return
 
             conn.sendall(b"AUTH success")
@@ -102,37 +101,39 @@ def h_client(conn, addr, usrs):
     finally:
         conn.close()
 
-def h_up(conn, u_path):  
-    """Handle file upload from client."""
-    if not os.path.exists(u_path):  
-        os.makedirs(u_path)  
+def h_up(conn, u_path):
+    if not os.path.exists(u_path):
+        os.makedirs(u_path)
 
-    f_name = conn.recv(1024).decode().strip()  
-    f_path = os.path.join(u_path, f_name)  
+    f_name = conn.recv(1024).decode().strip()
+    f_path = os.path.join(u_path, f_name)
 
-    conn.sendall(b"File received")  
-    with open(f_path, 'wb') as f:  
-        while True:  
-            data = conn.recv(1024)  
-            if data == b"END":  
-                break  
-            f.write(data)  
-
+    conn.sendall(b"File name received")
+    with open(f_path, 'wb') as f:
+        while True:
+            data = conn.recv(1024)
+            if data == b"END":  # Check if "END" is received as a separate message
+                break
+            f.write(data)
     conn.sendall(b"File upload completed.\n")
 
-def h_down(conn, u_path):  
-    """Handle file download for client."""
-    filename = conn.recv(1024).decode().strip()  
-    f_path = os.path.join(u_path, filename)  
-    if os.path.exists(f_path):  
-        conn.sendall(b"File Exists, Download will start now~\n")  
-        with open(f_path, 'rb') as f:  
-            data = f.read(1024)  
-            while data:  
-                conn.sendall(data)  
-                data = f.read(1024)  
-            conn.sendall(b"END")  
-    else:  
+
+def h_down(conn, u_path):
+    filename = conn.recv(1024).decode().strip()
+    f_path = os.path.join(u_path, filename)
+    if os.path.exists(f_path):
+        conn.sendall(b"File Exists, Download will start now~\n")
+        with open(f_path, 'rb') as f:
+            data = f.read(1024)
+            print(data)
+            print("============================================")
+            while data:
+                conn.sendall(data)
+                data = f.read(1024)
+                print(data)
+                print("============================================")
+            conn.sendall(b"END")
+    else:
         conn.sendall(b"File not found.\n")
 
 def h_list(conn, u_path):
@@ -167,18 +168,32 @@ def h_del(conn, u_path):
 
 def signal_handler(sig, frame):
     """Handle server shutdown gracefully."""
-    print("\nServer shutting down gracefully.")
-    sys.exit(0)
+    global stop_server
+    print("\nShutting down server gracefully...")
+    stop_server = True
 
 signal.signal(signal.SIGINT, signal_handler)
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind((HOST, PORT))
     s.listen()
-    print("Server is listening")
+    s.settimeout(1)  # Non-blocking accept
+    print("Server is listening...")
 
-    while True:
-        conn, addr = s.accept()
-        print("Connection established", addr)
-        c_thread = threading.Thread(target=h_client, args=(conn, addr, load_usrs()))
-        c_thread.start()
+    threads = []
+
+    while not stop_server:
+        try:
+            conn, addr = s.accept()
+            print(f"Connection established with {addr}")
+            thread = threading.Thread(target=h_client, args=(conn, addr, load_usrs()))
+            thread.start()
+            threads.append(thread)
+        except socket.timeout:
+            continue
+
+    for thread in threads:
+        thread.join()
+
+    print("Server has shut down.")
